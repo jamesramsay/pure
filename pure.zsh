@@ -1,6 +1,11 @@
-# Pure
+# Pure (ish)
 # by Sindre Sorhus
 # https://github.com/sindresorhus/pure
+# MIT License
+#
+# Tweaks
+# by James Ramsay
+# https://github.com/jamesramsay/pure
 # MIT License
 
 # For my own and others sanity
@@ -23,20 +28,24 @@
 # \e[K  => clears everything after the cursor on the current line
 # \e[2K => clear everything on the current line
 
+zmodload zsh/mathfunc
 
-# turns seconds into human readable time
-# 165392 => 1d 21h 56m 32s
+# turns milliseconds into human readable time
+# 165392000 => 1d 21h 56m 32s
+#      4263 =>             4.263s
 # https://github.com/sindresorhus/pretty-time-zsh
 prompt_pure_human_time_to_var() {
-	local human total_seconds=$1 var=$2
-	local days=$(( total_seconds / 60 / 60 / 24 ))
-	local hours=$(( total_seconds / 60 / 60 % 24 ))
-	local minutes=$(( total_seconds / 60 % 60 ))
-	local seconds=$(( total_seconds % 60 ))
+	local human total_milliseconds=$1 var=$2
+	local days=$(( total_milliseconds / 1000 / 60 / 60 / 24 ))
+	local hours=$(( total_milliseconds / 1000 / 60 / 60 % 24 ))
+	local minutes=$(( total_milliseconds / 1000 / 60 % 60 ))
+	local seconds=$(( total_milliseconds / 1000 % 60 ))
+	local milliseconds=$(( total_milliseconds % 1000 ))
 	(( days > 0 )) && human+="${days}d "
 	(( hours > 0 )) && human+="${hours}h "
 	(( minutes > 0 )) && human+="${minutes}m "
 	human+="${seconds}s"
+	(( seconds < 5 )) && human="${seconds}.$(printf %03.f milliseconds)s"
 
 	# store human readable time in variable as specified by caller
 	typeset -g "${var}"="${human}"
@@ -45,9 +54,10 @@ prompt_pure_human_time_to_var() {
 # stores (into prompt_pure_cmd_exec_time) the exec time of the last command if set threshold was exceeded
 prompt_pure_check_cmd_exec_time() {
 	integer elapsed
-	(( elapsed = EPOCHSECONDS - ${prompt_pure_cmd_timestamp:-$EPOCHSECONDS} ))
+	integer EPOCHMILLISECONDS=int(EPOCHREALTIME * 1000)
+	(( elapsed = $EPOCHMILLISECONDS - ${prompt_pure_cmd_timestamp:-$EPOCHMILLISECONDS} ))
 	typeset -g prompt_pure_cmd_exec_time=
-	(( elapsed > ${PURE_CMD_MAX_EXEC_TIME:-5} )) && {
+	(( elapsed > ${PURE_CMD_MAX_EXEC_TIME:-100} )) && {
 		prompt_pure_human_time_to_var $elapsed "prompt_pure_cmd_exec_time"
 	}
 }
@@ -92,7 +102,7 @@ prompt_pure_preexec() {
 		fi
 	fi
 
-	typeset -g prompt_pure_cmd_timestamp=$EPOCHSECONDS
+	typeset -g prompt_pure_cmd_timestamp=$((int(EPOCHREALTIME * 1000)))
 
 	# shows the current dir and executed command in the title while a process is active
 	prompt_pure_set_title 'ignore-escape' "$PWD:t: $2"
