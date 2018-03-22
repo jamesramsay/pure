@@ -137,6 +137,11 @@ prompt_pure_preprompt_render() {
 		preprompt_parts+=('%F{cyan}${prompt_pure_git_arrows}%f')
 	fi
 
+	# GitLab CI pipeline status
+	if [[ -n $prompt_gitlab_ci_status ]]; then
+		preprompt_parts+=('${prompt_gitlab_ci_status}')
+	fi
+
 	# Username and machine, if applicable.
 	[[ -n $prompt_pure_state[username] ]] && preprompt_parts+=('${prompt_pure_state[username]}')
 	# Execution time.
@@ -324,6 +329,13 @@ prompt_pure_async_tasks() {
 		typeset -g prompt_pure_async_init=1
 	}
 
+	# GitLab CI pipeline status
+	((!${prompt_gitlab_async_init:-0})) && {
+		async_start_worker "prompt_gitlab" -n
+		async_register_callback "prompt_gitlab" prompt_gitlab_async_callback
+		typeset -g prompt_gitlab_async_init=1
+	}
+
 	# Update the current working directory of the async worker.
 	async_worker_eval "prompt_pure" builtin cd -q $PWD
 
@@ -333,6 +345,7 @@ prompt_pure_async_tasks() {
 	if [[ $PWD != ${prompt_pure_vcs_info[pwd]}* ]]; then
 		# stop any running async jobs
 		async_flush_jobs "prompt_pure"
+		async_flush_jobs "prompt_gitlab"
 
 		# reset git preprompt variables, switching working tree
 		unset prompt_pure_git_dirty
@@ -341,6 +354,9 @@ prompt_pure_async_tasks() {
 		unset prompt_pure_git_fetch_pattern
 		prompt_pure_vcs_info[branch]=
 		prompt_pure_vcs_info[top]=
+
+		# GitLab CI
+		unset prompt_gitlab_ci_status
 	fi
 	unset MATCH MBEGIN MEND
 
@@ -350,6 +366,7 @@ prompt_pure_async_tasks() {
 	[[ -n $prompt_pure_vcs_info[top] ]] || return
 
 	prompt_pure_async_refresh
+	prompt_gitlab_async_refresh
 }
 
 prompt_pure_async_refresh() {
@@ -625,6 +642,54 @@ prompt_pure_setup() {
 	PROMPT4="${ps4_parts[depth]} ${ps4_symbols}${ps4_parts[prompt]}"
 
 	unset ZSH_THEME  # Guard against Oh My Zsh themes overriding Pure.
+}
+
+#
+# GitLab integration
+#
+prompt_gitlab_async_refresh() {
+	setopt localoptions noshwordsplit
+	local duration=${1:-1}
+
+	(( duration > 0 )) && async_job "prompt_gitlab" sleep duration
+
+	async_job "prompt_gitlab" prompt_gitlab_async_ci_status $PWD
+}
+
+prompt_gitlab_async_ci_status() {
+	setopt localoptions noshwordsplit
+	builtin cd -q $1
+	command git-lab status --short
+}
+
+prompt_gitlab_async_callback() {
+	setopt localoptions noshwordsplit
+	local job=$1 code=$2 output=$3 exec_time=$4 next_pending=$6
+
+	if [[ -n $output ]]; then
+		local status_mark=""
+		case $output in
+			pending)
+				status_mark="%F{242}"
+				prompt_gitlab_async_refresh 60
+				;;
+			running)
+				status_mark="%F{magenta}"
+				prompt_gitlab_async_refresh 60
+				;;
+			success)
+				status_mark="%F{green}"
+				;;
+			failed)
+				status_mark="%F{red}"
+				;;
+		esac
+
+		status_mark+="${GITLAB_CI_STATUS_ICON:-•}%f"
+		typeset -g prompt_gitlab_ci_status=$status_mark
+	fi
+
+	prompt_pure_preprompt_render
 }
 
 prompt_pure_setup "$@"
